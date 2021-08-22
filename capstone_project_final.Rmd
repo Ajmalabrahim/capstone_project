@@ -1,0 +1,214 @@
+---
+title: 'Capstone Project'
+author: 'Ajmal Abrahim'
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    number_sections: true
+    toc: true  
+---
+# Cyclistic Bike Sharing Introduction
+
+Cyclistic, a bike-sharing company, features more than 5,800 bicycles and 600 docking stations. Cyclistic provides bikes for riders with disabilities which make up about 8% of riders. Most riders use the traditional bikes, for either leisure activities, or commuting to work. Since launching in 2016, Cyclistic has continued to be a successful and thriving company due to its inclusive services that have appealed to a wide audience.
+
+# Ask
+
+The Cyclistic bike sharing company in Chicago has both casual and members who rent bikes. The director of marketing for Cyclistic wants to maximize 
+the annual number of memberships since this drives more revenue for the company. I have been tasked with suggesting a proposal to help the company reach its goal. In order to find out the correct course of action the company should take, I will first have to understand how casual and annual members use their bikes. 
+
+# Prepare 
+
+I will use Cyclistic's historical trip data to analyze and identify trends. I will look at the last 12 months of trip data to aid me in discovering the story of bike use by the members and casuals. The data will come from a reliable second party known as Motivate International Inc, which operates the City of Chicago's bicycle
+sharing service. 
+
+### Library for the Analysis
+
+I will use use these libraries to help me work with the Cyclistic trip data I gathered from Motivate International Inc
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(ggstatsplot)
+```
+
+### Creating a Dataframe
+
+I will concatenate the last 12 months of data into one dataframe. With all the data in one place, it will be easier to work with, and make finding the story of the data easier. I will then save the dataframe to a variable.
+
+```{r}
+csv_files <- list.files(path = "C:/Users/Ajmal/OneDrive/Desktop/Cyclistic Dataset from last 12 Months", recursive = TRUE, full.names=TRUE)
+
+cyclistic_trip_data <- do.call(rbind, lapply(csv_files, read.csv))
+
+head(cyclistic_trip_data)
+```
+
+# Process
+
+After looking through the data I can see that there are many empty values that can potentially skew the plot of the data's story. I will put a NA 
+for all the empty cells and then remove all the rows with empty data.
+
+```{r}
+cyclistic_trip_data[cyclistic_trip_data==""] <- NA 
+
+
+cyclistic_trip_data_cleaned <- na.omit(cyclistic_trip_data)
+
+str(cyclistic_trip_data_cleaned)
+```
+
+## Changing Structure of Columns
+
+In order to properly find the ride times of both the member and casual riders, I need to convert the started_at and ended_at columns to calender dates and time.
+
+```{r}
+cyclistic_trip_data_cleaned$started_at <- as.POSIXct(cyclistic_trip_data_cleaned$started_at, "%Y-%m-%d %H:%M:%S")
+
+cyclistic_trip_data_cleaned$ended_at <- as.POSIXct(cyclistic_trip_data_cleaned$ended_at, "%Y-%m-%d %H:%M:%S")
+
+str(cyclistic_trip_data_cleaned)
+
+```
+
+## Creating New Column for Ride Lengths
+
+In order to find how casual and members use their bikes differently, I will create a new column called ride_length.
+
+```{r}
+cyclistic_trip_data_cleaned <- cyclistic_trip_data_cleaned %>% 
+  mutate(ride_length = as.numeric(cyclistic_trip_data_cleaned$ended_at-cyclistic_trip_data_cleaned$started_at)/60)
+
+summary(cyclistic_trip_data_cleaned$ride_length)
+```
+
+It seems there are outliers in the data that will skew with the analysis. In order to make better data-driven decisions, I will have to remove these outliers before I can properly analyze the data.
+
+## Creating New Column for Day of the Week
+
+Now I will create a new column called day_of_week. This column combined with ride length will help me articulate to Cyclistic shareholders what days of the week to focus on for maximizing profits. 
+
+```{r}
+cyclistic_trip_data_cleaned <- cyclistic_trip_data_cleaned %>% 
+  mutate(day_of_week = wday(started_at))
+
+summary(cyclistic_trip_data_cleaned$day_of_week)
+```
+
+## Finding Data Distribution
+
+Before I can start analyzing the data I need to find the distribution of the data. This will help me get rid of all the outliers. 
+
+```{r}
+Q <- quantile(cyclistic_trip_data_cleaned$ride_length, probs=c(.25, .75), na.rm = FALSE)
+```
+
+```{r}
+iqr <- IQR(cyclistic_trip_data_cleaned$ride_length)
+```
+
+```{r}
+up <- Q[2]+1.5*iqr
+```
+
+```{r}
+low <- Q[1]-1.5*iqr
+```
+
+## Getting Rid of Outliers
+
+Now that I have the distribution, I can safely remove the outliers from the data without hurting the good data.
+
+```{r}
+cyclistic_trip_data_cleanedV2<- subset(cyclistic_trip_data_cleaned, cyclistic_trip_data_cleaned$ride_length > (Q[1] - 1.5*iqr) & cyclistic_trip_data_cleaned$ride_length < (Q[2]+1.5*iqr))
+```
+
+# Analyze 
+
+Now that the null values and outliers are gone, I can finally analyze the data.
+
+```{r}
+summary(cyclistic_trip_data_cleanedV2$ride_length)
+aggregate(cyclistic_trip_data_cleanedV2$ride_length ~ cyclistic_trip_data_cleanedV2$member_casual, FUN = mean)
+aggregate(cyclistic_trip_data_cleanedV2$ride_length ~ cyclistic_trip_data_cleanedV2$member_casual, FUN = median)
+aggregate(cyclistic_trip_data_cleanedV2$ride_length ~ cyclistic_trip_data_cleanedV2$member_casual, FUN = max)
+aggregate(cyclistic_trip_data_cleanedV2$ride_length ~ cyclistic_trip_data_cleanedV2$member_casual, FUN = min)
+
+table(cyclistic_trip_data_cleanedV2$member_casual)
+```
+
+# Share
+
+This graph is to see the total number of rides by both type of users for each day of the week
+
+```{r}
+cyclistic_trip_data_cleanedV2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  dplyr::summarise(number_of_rides = n()
+                   ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+* There are more members than casuals who use the bikes all throughout the week
+* Weekdays, Monday through Friday, see a lot more members than casuals using bikes
+* It seems Saturday and Sunday have a lot of casuals who use the bikes, this can be the area of focus for bringing more casuals over to becoming members
+
+
+
+
+This graph is to see the average duration of bike trips between members and casuals throughout the week
+
+```{r}
+cyclistic_trip_data_cleanedV2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  dplyr::summarise(number_of_rides = n()
+                   ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+* Members seem to use bikes for longer than casuals all throughout the week
+* Members use the bikes the most on Saturday, and Sunday
+* Casuals use the bikes most on Saturday, and Sunday
+
+
+
+
+This graph shows the breakdown between the total number of casuals and members
+
+```{r}
+ggplot(data = cyclistic_trip_data_cleanedV2) +
+  geom_bar(mapping = aes(x = member_casual, fill=member_casual))
+```
+
+* members = 61.22% 
+* casuals = 38.78%
+
+
+
+
+## Share Conclusion
+
+The company has about 39% casuals and 61% members. If the company would like to convert more casuals into members in order to maximize profits, they should focus on trying to make Saturdays and Sundays more appealing for casuals, since these are days that see a high number of casual users. 
+The company could make a special offer to casuals who use the service primarily for weekends by making a secondary type of membership that offers a discount for use on the weekends. 
+Since casuals don't use the bikes as long as members, we could offer more incentives to use their bikes longer in order to convert them into members. Since casuals use bikes more often on weekends, this could be a focal point in trying to get casuals to ride more on the weekdays with a discount for weekends. 
+
+# Act
+
+I would recommend that the company focus on the time of day through the week to find peak number of riders both casual and member. 
+I also recommend to look at any seasonal change in total number of riders 
+An interesting analysis of day vs night riders might provide an interesting story. The company could offer a special type of service after sunset to drive more customers to ride at night. 
+
+# Data Cleaning Documentation 
+
+* Started out with 4,460,151 rows with 13 columns. Saved this to the variable cyclistic_trip_data
+* After deleting rows with empty columns, now have 4,025,503 rows, added two new columns called ride_length, and day_of_week. Saved this to variable called cyclistic_trip_data_cleaned
+* Removed outliers from the data, now have 3,708,053 rows and 15 columns. Saved this to variable called cyclistic_trip_data_cleanedV2 
